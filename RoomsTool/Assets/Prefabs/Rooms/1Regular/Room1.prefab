@@ -85,6 +85,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 759ff006477b869418af3cc5d34a8a24, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  floor: {fileID: 287684297927436710}
   entrances:
   - {fileID: 5163305635842370389}
   - {fileID: 5163305635884263552}
@@ -145,6 +146,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 164a4b2b9155ebc45805a782dfe5b342, type: 3}
+--- !u!4 &287684297927436710 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 248607632928378933, guid: 164a4b2b9155ebc45805a782dfe5b342, type: 3}
+  m_PrefabInstance: {fileID: 39745195449366931}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &6874027553739661008 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6910852417843095363, guid: 164a4b2b9155ebc45805a782dfe5b342, type: 3}
@@ -535,6 +541,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Door (2)
       objectReference: {fileID: 0}
+    - target: {fileID: 1784213516386454083, guid: ada3bd2b8eda8b34baf58d5f692932dc, type: 3}
+      propertyPath: m_TagString
+      value: Door
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ada3bd2b8eda8b34baf58d5f692932dc, type: 3}
 --- !u!4 &5163305635884263552 stripped
@@ -662,6 +672,10 @@ PrefabInstance:
     - target: {fileID: 1784213516386454083, guid: ada3bd2b8eda8b34baf58d5f692932dc, type: 3}
       propertyPath: m_Name
       value: Door (1)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1784213516386454083, guid: ada3bd2b8eda8b34baf58d5f692932dc, type: 3}
+      propertyPath: m_TagString
+      value: Door
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ada3bd2b8eda8b34baf58d5f692932dc, type: 3}

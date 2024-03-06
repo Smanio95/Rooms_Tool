@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 396828948156921771}
   m_Layer: 0
   m_Name: Door (2)
-  m_TagString: Untagged
+  m_TagString: Door
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -48,7 +48,7 @@ GameObject:
   - component: {fileID: 396828948271487762}
   m_Layer: 0
   m_Name: element1
-  m_TagString: Untagged
+  m_TagString: Door
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -145,7 +145,7 @@ GameObject:
   - component: {fileID: 2221874498793803807}
   m_Layer: 0
   m_Name: element3
-  m_TagString: Untagged
+  m_TagString: Door
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -280,6 +280,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 759ff006477b869418af3cc5d34a8a24, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  floor: {fileID: 4744649503229310605}
   entrances:
   - {fileID: 396828948156921771}
 --- !u!1 &2108561409531772932
@@ -1036,7 +1037,7 @@ GameObject:
   - component: {fileID: 8471220371709728621}
   m_Layer: 0
   m_Name: element2
-  m_TagString: Untagged
+  m_TagString: Door
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

@@ -49,28 +49,40 @@ public class RoomsTool : EditorWindow
     [MenuItem(Constants.TOOL_NAME)]
     public static void OpenRoomsTool() => GetWindow<RoomsTool>();
 
-    public float snappingRadius;
+    public LayerMask layerMask;
+    public float snappingRadius = 2;
+    public float snappingHardness = 3;
 
     SerializedObject so;
     SerializedProperty snappingRadiusP;
+    SerializedProperty layerMaskP;
+    SerializedProperty snappingHardnessP;
 
-    int currentBlockIndex = -1;
-    int currentRoomIndex = -1;
-    int currentPrefabIndex = -1;
-    List<PrefabsBlock> prefabBlocks = new();
+    private int currentBlockIndex = -1;
+    private int currentRoomIndex = -1;
+    private int currentPrefabIndex = -1;
+    private List<PrefabsBlock> prefabBlocks = new();
 
-    RoomInfo selectedPrefab;
+    private RoomInfo selectedPrefab;
 
-    int currentSelectionIndex = 0;
-    Texture2D currentSelectionArrow;
+    private int currentSelectionIndex = 0;
+    private Texture2D currentSelectionArrow;
 
+    private Quaternion defaultRotation = Quaternion.identity;
+    private Vector3 rectAngle = new(0, 90, 0);
+
+    private Vector3 snapPoint;
+
+    private bool hasFoundSnapping;
 
     private void OnEnable()
     {
         SceneView.duringSceneGui += DuringSceneGUI;
 
         so = new(this);
+        layerMaskP = so.FindProperty("layerMask");
         snappingRadiusP = so.FindProperty("snappingRadius");
+        snappingHardnessP = so.FindProperty("snappingHardness");
 
         string[] guids = AssetDatabase.FindAssets("t:folder", new[] { Constants.FOLDER_PATH });
         IEnumerable<string> paths = guids.Select(AssetDatabase.GUIDToAssetPath);
@@ -80,6 +92,7 @@ public class RoomsTool : EditorWindow
         guids = AssetDatabase.FindAssets("t:texture2D", new[] { Constants.TEXTURE_PATH });
         paths = guids.Select(AssetDatabase.GUIDToAssetPath);
         Texture2D[] textures = paths.Select(AssetDatabase.LoadAssetAtPath<Texture2D>).ToArray();
+
         if (textures.Length > 0) currentSelectionArrow = textures[0];
     }
 
@@ -91,28 +104,95 @@ public class RoomsTool : EditorWindow
     private void OnGUI()
     {
         so.Update();
+        EditorGUILayout.PropertyField(layerMaskP);
         EditorGUILayout.PropertyField(snappingRadiusP);
+        EditorGUILayout.PropertyField(snappingHardnessP);
 
-        snappingRadiusP.floatValue = Mathf.Max(snappingRadiusP.floatValue);
+        snappingRadiusP.floatValue = Mathf.Max(snappingRadiusP.floatValue, 0);
+        snappingHardnessP.floatValue = Mathf.Max(snappingHardnessP.floatValue, 0);
 
-        so.ApplyModifiedProperties();
+        EditorGUILayout.LabelField(Constants.EXPLANATION);
+        EditorStyles.label.wordWrap = true;
+
+        if (so.ApplyModifiedProperties())
+        {
+            SceneView.RepaintAll();
+        }
     }
 
     private void DuringSceneGUI(SceneView view)
     {
         Handles.BeginGUI();
 
-        HandleSelection(view);
+        HandleSelection();
 
         CreateViewGUI();
 
         Handles.EndGUI();
 
+        if (Event.current.type == EventType.MouseMove)
+        {
+            view.Repaint();
+        }
+
+        if (Event.current.shift && Event.current.type == EventType.ScrollWheel)
+        {
+            float deltaMultiplier = Event.current.delta.x > 0 ? -1 : 1;
+
+            defaultRotation = Quaternion.Euler(rectAngle * deltaMultiplier + defaultRotation.eulerAngles);
+
+            view.Repaint();
+        }
+
+        #region Spawn Prefab
+        Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
+
+        if (selectedPrefab != null && (Physics.Raycast(ray, out RaycastHit hit, 1000, layerMask) || hasFoundSnapping))
+        {
+            Vector3 point = hit.point;
+            point.y = 0;
+
+            if (hasFoundSnapping)
+            {
+                if (Vector3.SqrMagnitude(snapPoint - hit.point) <= Mathf.Pow(snappingHardness, 2))
+                {
+                    point = snapPoint;
+                }
+                else
+                {
+                    hasFoundSnapping = false;
+                }
+            }
+
+            Pose currentPose = new(point, defaultRotation);
+
+            DrawPreview(currentPose);
+
+            Vector2 lengths = RetrieveHalfLengths(out bool _);
+            Handles.color = Color.green;
+
+            if (!CheckNeighbors(currentPose.position, lengths))
+            {
+                if (Event.current.modifiers == EventModifiers.None
+                    && Event.current.type == EventType.KeyUp
+                    && Event.current.keyCode == KeyCode.Space)
+                {
+                    SpawnPrefab(currentPose);
+                }
+            }
+            else
+            {
+                Handles.color = Color.red;
+            }
+
+            Handles.DrawWireCube(point, new(lengths.x * 2, 0.1f, lengths.y * 2));
+        }
+        #endregion
     }
 
-    private void HandleSelection(SceneView view)
+    private void HandleSelection()
     {
-        if (Event.current.type == EventType.KeyUp)
+        if (Event.current.shift && Event.current.type == EventType.KeyUp)
         {
             switch (Event.current.keyCode)
             {
@@ -231,7 +311,7 @@ public class RoomsTool : EditorWindow
 
         List<RoomsBlock> lst = new();
 
-        Room[] ordered = rooms.OrderBy(room => room.entrances.Length).ToArray();
+        Room[] ordered = rooms.OrderBy(room => room.NumOfEntraces).ToArray();
 
         int nOfEntrances = ordered[0].NumOfEntraces;
 
@@ -406,4 +486,117 @@ public class RoomsTool : EditorWindow
         }
     }
 
+    private bool CheckNeighbors(Vector3 point, Vector2 lengths)
+    {
+        if (selectedPrefab == null) return true;
+
+        point.y += 1;
+
+        Collider[] colliders = Physics.OverlapBox(point, new(lengths.x - Constants.ACCEPTANCE, 0.1f, lengths.y - Constants.ACCEPTANCE));
+
+        return colliders.Length > 0;
+    }
+
+    private Vector2 RetrieveHalfLengths(out bool isStraight)
+    {
+        isStraight = Mathf.RoundToInt(Vector3.Dot(Vector3.right, defaultRotation * Vector3.forward)) == 0;
+
+        return new Vector2(isStraight ? selectedPrefab.prefab.width : selectedPrefab.prefab.depth,
+                    isStraight ? selectedPrefab.prefab.depth : selectedPrefab.prefab.width) / 2;
+    }
+
+    private Vector3 CreateSnapPoint(Vector3 offset, Ray snappingRay)
+    {
+        float dotValue = Vector3.Dot(snappingRay.direction, defaultRotation * Vector3.forward);
+        bool areCoincident = dotValue == 0;
+
+        Vector2 lengths = RetrieveHalfLengths(out bool isStraight);
+
+        Vector3 snapPoint = snappingRay.origin + snappingRay.direction * (areCoincident ? lengths.x : lengths.y);
+
+        if (isStraight)
+        {
+            offset.z = 0;  
+        }
+        else
+        {
+            offset.x = 0;
+        }
+
+        snapPoint += offset;
+
+        return snapPoint;
+    }
+
+    private void DrawPreview(Pose pose)
+    {
+        if (selectedPrefab == null) return;
+
+        Matrix4x4 poseToWorldMtx = Matrix4x4.TRS(pose.position, pose.rotation, Vector3.one);
+
+        MeshFilter[] filters = selectedPrefab.prefab.GetComponentsInChildren<MeshFilter>();
+
+        foreach (MeshFilter f in filters)
+        {
+            Matrix4x4 childToPose = f.transform.localToWorldMatrix;
+            Matrix4x4 childToWorldMatrix = poseToWorldMtx * childToPose;
+
+            Mesh mesh = f.sharedMesh;
+            Material m = f.GetComponent<MeshRenderer>().sharedMaterial;
+            m.SetPass(0);
+            Graphics.DrawMeshNow(mesh, childToWorldMatrix);
+        }
+
+        foreach (Transform t in selectedPrefab.prefab.entrances)
+        {
+            Matrix4x4 childToPose = t.localToWorldMatrix;
+            Matrix4x4 childToWorldMatrix = poseToWorldMtx * childToPose;
+            Vector3 finalPos = childToWorldMatrix.GetColumn(3);
+
+            Matrix4x4 forwardToPose = Matrix4x4.TRS(t.forward, pose.rotation, Vector3.one);
+            Matrix4x4 forwardToWorldMatrix = poseToWorldMtx * forwardToPose;
+            Vector3 finalDirection = forwardToWorldMatrix.GetColumn(3);
+
+            if (!hasFoundSnapping && CheckDistance(finalPos, finalDirection.normalized.Round(), out Ray hitRay))
+            {
+                hasFoundSnapping = true;
+                snapPoint = CreateSnapPoint(selectedPrefab.prefab.transform.position - t.position, hitRay);
+                break;
+            }
+        }
+    }
+
+    private void SpawnPrefab(Pose pose)
+    {
+        Transform toSpawn = (Transform)PrefabUtility.InstantiatePrefab(selectedPrefab.prefab.transform);
+        toSpawn.SetPositionAndRotation(pose.position, pose.rotation);
+        Undo.RegisterCreatedObjectUndo(toSpawn.gameObject, "Spawn prefab");
+    }
+
+    private bool CheckDistance(Vector3 pos, Vector3 dir, out Ray hitRay)
+    {
+        hitRay = new();
+
+        Collider[] colliders = Physics.OverlapSphere(pos, snappingRadius);
+
+        if (colliders.Length > 0)
+        {
+            foreach (Collider hit in colliders)
+            {
+                if (hit.CompareTag("Door"))
+                {
+                    float dotResult = Vector3.Dot(hit.transform.forward, dir);
+                    if (dotResult < 0.9f)
+                    {
+                        continue;
+                    }
+
+                    hitRay = new(hit.transform.parent.position, hit.transform.forward);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
