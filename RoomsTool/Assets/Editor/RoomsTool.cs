@@ -109,7 +109,7 @@ public class RoomsTool : EditorWindow
         EditorGUILayout.PropertyField(snappingHardnessP);
 
         snappingRadiusP.floatValue = Mathf.Max(snappingRadiusP.floatValue, 0);
-        snappingHardnessP.floatValue = Mathf.Max(snappingHardnessP.floatValue, 0);
+        snappingHardnessP.floatValue = Mathf.Max(snappingHardnessP.floatValue, snappingRadiusP.floatValue);
 
         EditorGUILayout.LabelField(Constants.EXPLANATION);
         EditorStyles.label.wordWrap = true;
@@ -168,7 +168,10 @@ public class RoomsTool : EditorWindow
 
             DrawPreview(currentPose);
 
-            Vector2 lengths = RetrieveHalfLengths(out bool _);
+            Handles.color = Color.blue;
+            Handles.DrawWireDisc(point, Vector3.up, snappingHardness, 3);
+
+            Vector2 lengths = RetrieveHalfLengths(true);
             Handles.color = Color.green;
 
             if (!CheckNeighbors(currentPose.position, lengths))
@@ -497,35 +500,63 @@ public class RoomsTool : EditorWindow
         return colliders.Length > 0;
     }
 
-    private Vector2 RetrieveHalfLengths(out bool isStraight)
+    private Vector2 RetrieveHalfLengths(bool oriented = false)
     {
-        isStraight = Mathf.RoundToInt(Vector3.Dot(Vector3.right, defaultRotation * Vector3.forward)) == 0;
+        if (oriented)
+        {
+            bool isStraight = Mathf.RoundToInt(Vector3.Dot(Vector3.right, defaultRotation * Vector3.forward)) == 0;
+            return new Vector2(isStraight ? selectedPrefab.prefab.width : selectedPrefab.prefab.depth,
+                        isStraight ? selectedPrefab.prefab.depth : selectedPrefab.prefab.width) / 2;
+        }
 
-        return new Vector2(isStraight ? selectedPrefab.prefab.width : selectedPrefab.prefab.depth,
-                    isStraight ? selectedPrefab.prefab.depth : selectedPrefab.prefab.width) / 2;
+        return new Vector2(selectedPrefab.prefab.width, selectedPrefab.prefab.depth) / 2;
     }
 
-    private Vector3 CreateSnapPoint(Vector3 offset, Ray snappingRay)
+    private Vector3 CreateSnapPoint(Vector3 offset, Ray snappingRay, bool offsetZModifier)
     {
-        float dotValue = Vector3.Dot(snappingRay.direction, defaultRotation * Vector3.forward);
-        bool areCoincident = dotValue == 0;
+        float dotValue = Mathf.RoundToInt(Vector3.Dot(snappingRay.direction, defaultRotation * Vector3.forward));
+        bool arePerpendicular = dotValue == 0;
 
-        Vector2 lengths = RetrieveHalfLengths(out bool isStraight);
+        Vector2 lengths = RetrieveHalfLengths();
 
-        Vector3 snapPoint = snappingRay.origin + snappingRay.direction * (areCoincident ? lengths.x : lengths.y);
+        Vector3 snapPoint = snappingRay.origin + snappingRay.direction * (arePerpendicular ? lengths.x : lengths.y);
 
-        if (isStraight)
+        float modifier;
+        if (offsetZModifier)
         {
-            offset.z = 0;  
+            modifier = offset.z;
         }
         else
         {
-            offset.x = 0;
+            modifier = offset.x;
         }
 
-        snapPoint += offset;
+        float mult = RetrieveMultiplier();
+        modifier *= mult;
+
+        if (Mathf.RoundToInt(Vector3.Dot(snappingRay.direction, Vector3.forward)) == 0)
+        {
+            snapPoint.z -= modifier;
+        }
+        else
+        {
+            snapPoint.x += modifier;
+        }
 
         return snapPoint;
+    }
+
+    private float RetrieveMultiplier()
+    {
+        int angle = (int)defaultRotation.eulerAngles.y % 360;
+        return angle switch
+        {
+            0 => -1,
+            90 => -1,
+            180 => 1,
+            270 => 1,
+            _ => -1
+        };
     }
 
     private void DrawPreview(Pose pose)
@@ -551,16 +582,16 @@ public class RoomsTool : EditorWindow
         {
             Matrix4x4 childToPose = t.localToWorldMatrix;
             Matrix4x4 childToWorldMatrix = poseToWorldMtx * childToPose;
-            Vector3 finalPos = childToWorldMatrix.GetColumn(3);
+            Vector3 finalPos = childToWorldMatrix.GetPosition();
 
-            Matrix4x4 forwardToPose = Matrix4x4.TRS(t.forward, pose.rotation, Vector3.one);
-            Matrix4x4 forwardToWorldMatrix = poseToWorldMtx * forwardToPose;
-            Vector3 finalDirection = forwardToWorldMatrix.GetColumn(3);
+            Vector3 dir = pose.rotation * t.forward;
 
-            if (!hasFoundSnapping && CheckDistance(finalPos, finalDirection.normalized.Round(), out Ray hitRay))
+            if (!hasFoundSnapping
+                && CheckDistance(finalPos, out Ray hitRay)
+                && Mathf.RoundToInt(Vector3.Dot(dir, hitRay.direction)) < -0.99f)
             {
                 hasFoundSnapping = true;
-                snapPoint = CreateSnapPoint(selectedPrefab.prefab.transform.position - t.position, hitRay);
+                snapPoint = CreateSnapPoint(t.localPosition - selectedPrefab.prefab.transform.position, hitRay, Mathf.RoundToInt(Vector3.Dot(dir, pose.rotation * Vector3.forward)) == 0);
                 break;
             }
         }
@@ -573,11 +604,14 @@ public class RoomsTool : EditorWindow
         Undo.RegisterCreatedObjectUndo(toSpawn.gameObject, "Spawn prefab");
     }
 
-    private bool CheckDistance(Vector3 pos, Vector3 dir, out Ray hitRay)
+    private bool CheckDistance(Vector3 pos, out Ray hitRay)
     {
         hitRay = new();
 
         Collider[] colliders = Physics.OverlapSphere(pos, snappingRadius);
+
+        Handles.color = Color.yellow;
+        Handles.DrawWireDisc(pos, Vector3.up, snappingRadius, 3);
 
         if (colliders.Length > 0)
         {
@@ -585,13 +619,8 @@ public class RoomsTool : EditorWindow
             {
                 if (hit.CompareTag("Door"))
                 {
-                    float dotResult = Vector3.Dot(hit.transform.forward, dir);
-                    if (dotResult < 0.9f)
-                    {
-                        continue;
-                    }
-
                     hitRay = new(hit.transform.parent.position, hit.transform.forward);
+
                     return true;
                 }
             }
