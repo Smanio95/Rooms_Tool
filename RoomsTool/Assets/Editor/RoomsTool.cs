@@ -51,11 +51,14 @@ public class RoomsTool : EditorWindow
 
     public LayerMask layerMask;
     public float snappingRadius = 2;
+    public bool showSnappingRadius = true;
     public float snappingHardness = 3;
+    public bool showSnappingHardness = true;
+    public bool allowSnappingOnOverlap = false;
 
     SerializedObject so;
-    SerializedProperty snappingRadiusP;
     SerializedProperty layerMaskP;
+    SerializedProperty snappingRadiusP;
     SerializedProperty snappingHardnessP;
 
     private int currentBlockIndex = -1;
@@ -104,9 +107,15 @@ public class RoomsTool : EditorWindow
     private void OnGUI()
     {
         so.Update();
-        EditorGUILayout.PropertyField(layerMaskP);
-        EditorGUILayout.PropertyField(snappingRadiusP);
-        EditorGUILayout.PropertyField(snappingHardnessP);
+
+        EditorGUILayout.PropertyField(layerMaskP, GUILayout.Width(250));
+        EditorGUILayout.PropertyField(snappingRadiusP, GUILayout.Width(200));
+        showSnappingRadius = EditorGUILayout.Toggle(new GUIContent("Show Snapping Radius", "Show snapping radius as a yellow circles"), showSnappingRadius);
+        EditorGUILayout.PropertyField(snappingHardnessP, GUILayout.Width(200));
+        showSnappingHardness = EditorGUILayout.Toggle(new GUIContent("Show Snapping Hardness", "Show hardness radius as a blue circle"), showSnappingHardness);
+        allowSnappingOnOverlap = EditorGUILayout.Toggle(new GUIContent("Allow Snap On Overlap",
+            "NOTE: if, in the center of the room that you are currently placing, there is, once snapped, any mesh that would collide with the room, the room will not be placed!"), 
+            allowSnappingOnOverlap);
 
         snappingRadiusP.floatValue = Mathf.Max(snappingRadiusP.floatValue, 0);
         snappingHardnessP.floatValue = Mathf.Max(snappingHardnessP.floatValue, snappingRadiusP.floatValue);
@@ -168,8 +177,11 @@ public class RoomsTool : EditorWindow
 
             DrawPreview(currentPose);
 
-            Handles.color = Color.blue;
-            Handles.DrawWireDisc(point, Vector3.up, snappingHardness, 3);
+            if (showSnappingHardness)
+            {
+                Handles.color = Color.blue;
+                Handles.DrawWireDisc(point, Vector3.up, snappingHardness, 3);
+            }
 
             Vector2 lengths = RetrieveHalfLengths(true);
             Handles.color = Color.green;
@@ -512,7 +524,7 @@ public class RoomsTool : EditorWindow
         return new Vector2(selectedPrefab.prefab.width, selectedPrefab.prefab.depth) / 2;
     }
 
-    private Vector3 CreateSnapPoint(Vector3 offset, Ray snappingRay, bool offsetZModifier)
+    private Vector3 CreateSnapPoint(Vector3 offset, Ray snappingRay, bool isLateral)
     {
         float dotValue = Mathf.RoundToInt(Vector3.Dot(snappingRay.direction, defaultRotation * Vector3.forward));
         bool arePerpendicular = dotValue == 0;
@@ -521,42 +533,57 @@ public class RoomsTool : EditorWindow
 
         Vector3 snapPoint = snappingRay.origin + snappingRay.direction * (arePerpendicular ? lengths.x : lengths.y);
 
-        float modifier;
-        if (offsetZModifier)
-        {
-            modifier = offset.z;
-        }
-        else
-        {
-            modifier = offset.x;
-        }
-
-        float mult = RetrieveMultiplier();
-        modifier *= mult;
-
-        if (Mathf.RoundToInt(Vector3.Dot(snappingRay.direction, Vector3.forward)) == 0)
-        {
-            snapPoint.z -= modifier;
-        }
-        else
-        {
-            snapPoint.x += modifier;
-        }
+        snapPoint = AdjustOffset(snapPoint, offset, isLateral);
 
         return snapPoint;
     }
 
-    private float RetrieveMultiplier()
+    private Vector3 AdjustOffset(Vector3 snapPoint, Vector3 offset, bool isLateral)
     {
         int angle = (int)defaultRotation.eulerAngles.y % 360;
-        return angle switch
+
+        if (isLateral)
         {
-            0 => -1,
-            90 => -1,
-            180 => 1,
-            270 => 1,
-            _ => -1
-        };
+            switch (angle)
+            {
+                case 0:
+                    snapPoint.z -= offset.z;
+                    break;
+                case 90:
+                    snapPoint.x += offset.z;
+                    break;
+                case 180:
+                    snapPoint.z += offset.z;
+                    break;
+                case 270:
+                    snapPoint.x -= offset.z;
+                    break;
+                default:
+                    throw new NotImplementedException();
+            };
+        }
+        else
+        {
+            switch (angle)
+            {
+                case 0:
+                    snapPoint.x -= offset.x;
+                    break;
+                case 90:
+                    snapPoint.z += offset.x;
+                    break;
+                case 180:
+                    snapPoint.x += offset.x;
+                    break;
+                case 270:
+                    snapPoint.z -= offset.x;
+                    break;
+                default:
+                    throw new NotImplementedException();
+            };
+        }
+
+        return snapPoint;
     }
 
     private void DrawPreview(Pose pose)
@@ -586,12 +613,14 @@ public class RoomsTool : EditorWindow
 
             Vector3 dir = pose.rotation * t.forward;
 
-            if (!hasFoundSnapping
-                && CheckDistance(finalPos, out Ray hitRay)
-                && Mathf.RoundToInt(Vector3.Dot(dir, hitRay.direction)) < -0.99f)
+            if (CheckDistance(finalPos, dir, out Ray hitRay))
             {
-                hasFoundSnapping = true;
-                snapPoint = CreateSnapPoint(t.localPosition - selectedPrefab.prefab.transform.position, hitRay, Mathf.RoundToInt(Vector3.Dot(dir, pose.rotation * Vector3.forward)) == 0);
+                snapPoint = CreateSnapPoint(t.localPosition - selectedPrefab.prefab.transform.position,
+                    hitRay,
+                    Mathf.RoundToInt(Vector3.Dot(dir, pose.rotation * Vector3.forward)) == 0);
+
+                if(FinalCheck(snapPoint)) hasFoundSnapping = true;
+
                 break;
             }
         }
@@ -604,28 +633,45 @@ public class RoomsTool : EditorWindow
         Undo.RegisterCreatedObjectUndo(toSpawn.gameObject, "Spawn prefab");
     }
 
-    private bool CheckDistance(Vector3 pos, out Ray hitRay)
+    private bool CheckDistance(Vector3 pos, Vector3 dir, out Ray hitRay)
     {
         hitRay = new();
 
-        Collider[] colliders = Physics.OverlapSphere(pos, snappingRadius);
+        Collider[] colliders = Physics.OverlapSphere(pos, snappingRadius, ~layerMask);
 
-        Handles.color = Color.yellow;
-        Handles.DrawWireDisc(pos, Vector3.up, snappingRadius, 3);
-
-        if (colliders.Length > 0)
+        if (showSnappingRadius)
         {
-            foreach (Collider hit in colliders)
-            {
-                if (hit.CompareTag("Door"))
-                {
-                    hitRay = new(hit.transform.parent.position, hit.transform.forward);
+            Handles.color = Color.yellow;
+            Handles.DrawWireDisc(pos, Vector3.up, snappingRadius, 3);
+        }
 
-                    return true;
+        if (colliders.Length == 0) return false;
+
+        bool found = false;
+
+        foreach (Collider hit in colliders)
+        {
+            if (hit.CompareTag("Door"))
+            {
+                if (Mathf.RoundToInt(Vector3.Dot(hit.transform.parent.forward, dir)) > -0.9f)
+                {
+                    return false;
+                }
+
+                if (!found)
+                {
+                    hitRay = new(hit.transform.parent.position, hit.transform.parent.forward);
+
+                    found = true;
                 }
             }
         }
 
-        return false;
+        return found;
+    }
+
+    private bool FinalCheck(Vector3 finalPos)
+    {
+        return Physics.OverlapSphere(finalPos, Constants.ACCEPTANCE, ~layerMask).Length == 0;
     }
 }
