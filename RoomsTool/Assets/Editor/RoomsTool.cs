@@ -13,6 +13,7 @@ public class Toggable
 public class PrefabsBlock : Toggable
 {
     public string blockName;
+    public int currentRoomIndex = -1;
     public List<RoomsBlock> roomBlocks;
 
     public PrefabsBlock(string _blockName, List<RoomsBlock> _roomBlocks)
@@ -49,12 +50,12 @@ public class RoomsTool : EditorWindow
     [MenuItem(Constants.TOOL_NAME)]
     public static void OpenRoomsTool() => GetWindow<RoomsTool>();
 
-    public LayerMask layerMask;
-    public float snappingRadius = 2;
-    public bool showSnappingRadius = true;
-    public float snappingHardness = 3;
-    public bool showSnappingHardness = true;
-    public bool allowSnappingOnOverlap = false;
+    [SerializeField] LayerMask layerMask;
+    [SerializeField] float snappingRadius = 2;
+    [SerializeField] bool showSnappingRadius = true;
+    [SerializeField] float snappingHardness = 3;
+    [SerializeField] bool showSnappingHardness = true;
+    [SerializeField] bool allowSnappingOnOverlap = false;
 
     SerializedObject so;
     SerializedProperty layerMaskP;
@@ -62,7 +63,6 @@ public class RoomsTool : EditorWindow
     SerializedProperty snappingHardnessP;
 
     private int currentBlockIndex = -1;
-    private int currentRoomIndex = -1;
     private int currentPrefabIndex = -1;
     private List<PrefabsBlock> prefabBlocks = new();
 
@@ -235,10 +235,10 @@ public class RoomsTool : EditorWindow
                 HorizontalChange(prefabBlocks.Select(r => (Toggable)r).ToList(), dir, ref currentBlockIndex);
                 break;
             case 1:
-                HorizontalChange(prefabBlocks[currentBlockIndex].roomBlocks.Select(r => (Toggable)r).ToList(), dir, ref currentRoomIndex);
+                HorizontalChange(prefabBlocks[currentBlockIndex].roomBlocks.Select(r => (Toggable)r).ToList(), dir, ref prefabBlocks[currentBlockIndex].currentRoomIndex);
                 break;
             case 2:
-                PrefabHorizontalChange(prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].prefabs, dir);
+                PrefabHorizontalChange(prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].prefabs, dir);
                 break;
             default:
                 HorizontalChange(prefabBlocks.Select(r => (Toggable)r).ToList(), dir, ref currentBlockIndex);
@@ -262,7 +262,7 @@ public class RoomsTool : EditorWindow
 
     private void PrefabHorizontalChange(List<RoomInfo> lst, int dir)
     {
-        if (prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].prefabs.Any(r => r.isToggled == true))
+        if (prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].prefabs.Any(r => r.isToggled == true))
         {
             dir = Mathf.Clamp(dir + currentPrefabIndex, 0, lst.Count - 1);
         }
@@ -315,7 +315,7 @@ public class RoomsTool : EditorWindow
             if (prefabBlocks[0].roomBlocks.Count > 0)
             {
                 prefabBlocks[0].roomBlocks[0].isToggled = true;
-                currentRoomIndex = 0;
+                prefabBlocks[currentBlockIndex].currentRoomIndex = 0;
             }
         }
     }
@@ -404,8 +404,8 @@ public class RoomsTool : EditorWindow
 
                     if (prefabBlocks[currentBlockIndex].roomBlocks.Count > 0)
                     {
-                        currentRoomIndex = Mathf.Max(prefabBlocks[currentBlockIndex].roomBlocks.FindIndex(r => r.isToggled), 0);
-                        prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].isToggled = true;
+                        prefabBlocks[currentBlockIndex].currentRoomIndex = Mathf.Max(prefabBlocks[currentBlockIndex].roomBlocks.FindIndex(r => r.isToggled), 0);
+                        prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].isToggled = true;
                     }
                 }
 
@@ -430,7 +430,7 @@ public class RoomsTool : EditorWindow
 
             bool value = GUI.Toggle(rect, roomBlocks[i].isToggled, roomBlocks[i].roomName);
 
-            if (i != currentRoomIndex && value != roomBlocks[i].isToggled)
+            if (i != prefabBlocks[currentBlockIndex].currentRoomIndex && value != roomBlocks[i].isToggled)
             {
                 roomBlocks[i].isToggled = value;
             }
@@ -439,16 +439,16 @@ public class RoomsTool : EditorWindow
             {
                 currentSelectionIndex = 1;
 
-                if (roomBlocks[i].isToggled && currentRoomIndex != i)
+                if (roomBlocks[i].isToggled && prefabBlocks[currentBlockIndex].currentRoomIndex != i)
                 {
-                    if (currentRoomIndex >= 0) roomBlocks[currentRoomIndex].isToggled = false;
+                    if (prefabBlocks[currentBlockIndex].currentRoomIndex >= 0) roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].isToggled = false;
 
-                    currentRoomIndex = i;
+                    prefabBlocks[currentBlockIndex].currentRoomIndex = i;
 
-                    if (prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].prefabs.Count > 0)
+                    if (prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].prefabs.Count > 0)
                     {
-                        currentPrefabIndex = Mathf.Max(prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].prefabs.FindIndex(r => r.isToggled), 0);
-                        prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].isToggled = true;
+                        currentPrefabIndex = Mathf.Max(prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].prefabs.FindIndex(r => r.isToggled), 0);
+                        prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].isToggled = true;
                     }
                 }
             }
@@ -456,9 +456,9 @@ public class RoomsTool : EditorWindow
             rect.x += rect.width + 2;
         }
 
-        if (currentRoomIndex >= 0)
+        if (prefabBlocks[currentBlockIndex].currentRoomIndex >= 0)
         {
-            CreatePrefabView(prefabBlocks[currentBlockIndex].roomBlocks[currentRoomIndex].prefabs);
+            CreatePrefabView(prefabBlocks[currentBlockIndex].roomBlocks[prefabBlocks[currentBlockIndex].currentRoomIndex].prefabs);
         }
 
     }
