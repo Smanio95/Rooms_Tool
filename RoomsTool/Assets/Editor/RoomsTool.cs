@@ -215,7 +215,8 @@ public class RoomsTool : EditorWindow
                     currentSelectionIndex = Mathf.Max(currentSelectionIndex - 1, 0);
                     break;
                 case KeyCode.S:
-                    currentSelectionIndex = Mathf.Min(currentSelectionIndex + 1, 2);
+                    bool atLeastNDoorSelected = prefabBlocks[currentBlockIndex].roomBlocks.Any(b => b.isToggled);  
+                    currentSelectionIndex = Mathf.Min(currentSelectionIndex + 1, atLeastNDoorSelected ? 2 : 1);
                     break;
                 case KeyCode.A:
                     HandleHorizontalShift(-1);
@@ -505,9 +506,7 @@ public class RoomsTool : EditorWindow
     {
         if (selectedPrefab == null) return true;
 
-        point.y += 1;
-
-        Collider[] colliders = Physics.OverlapBox(point, new(lengths.x - Constants.ACCEPTANCE, 0.1f, lengths.y - Constants.ACCEPTANCE));
+        Collider[] colliders = Physics.OverlapBox(point, new(lengths.x - Constants.ACCEPTANCE, 0.1f, lengths.y - Constants.ACCEPTANCE), Quaternion.identity, ~layerMask);
 
         return colliders.Length > 0;
     }
@@ -550,13 +549,13 @@ public class RoomsTool : EditorWindow
                     snapPoint.z -= offset.z;
                     break;
                 case 90:
-                    snapPoint.x += offset.z;
+                    snapPoint.x -= offset.z;
                     break;
                 case 180:
                     snapPoint.z += offset.z;
                     break;
                 case 270:
-                    snapPoint.x -= offset.z;
+                    snapPoint.x += offset.z;
                     break;
                 default:
                     throw new NotImplementedException();
@@ -611,6 +610,14 @@ public class RoomsTool : EditorWindow
             Matrix4x4 childToWorldMatrix = poseToWorldMtx * childToPose;
             Vector3 finalPos = childToWorldMatrix.GetPosition();
 
+            if (showSnappingRadius)
+            {
+                Handles.color = Color.yellow;
+                Handles.DrawWireDisc(finalPos, Vector3.up, snappingRadius, 3);
+            }
+
+            if (hasFoundSnapping) continue;
+
             Vector3 dir = pose.rotation * t.forward;
 
             if (CheckDistance(finalPos, dir, out Ray hitRay))
@@ -638,12 +645,6 @@ public class RoomsTool : EditorWindow
         hitRay = new();
 
         Collider[] colliders = Physics.OverlapSphere(pos, snappingRadius, ~layerMask);
-
-        if (showSnappingRadius)
-        {
-            Handles.color = Color.yellow;
-            Handles.DrawWireDisc(pos, Vector3.up, snappingRadius, 3);
-        }
 
         if (colliders.Length == 0) return false;
 
